@@ -1,4 +1,4 @@
-/** Non-secret identity of an enrolled agent. */
+/** Non-secret identity of a registered agent. */
 export interface AgentIdentity {
   agentId: string;
   organizationId: string;
@@ -6,8 +6,8 @@ export interface AgentIdentity {
   serverPublicKeyPem: string;
 }
 
-/** Outcome of {@link Deplite.enroll}: identity + freshly generated private key. */
-export interface Enrollment {
+/** Outcome of {@link Deplite.register}: identity + freshly generated private key. */
+export interface Registration {
   identity: AgentIdentity;
   privateKey: Uint8Array;
 }
@@ -15,6 +15,8 @@ export interface Enrollment {
 /** Typed event from the agent SSE stream. */
 export type AgentEvent =
   | { type: 'deploy'; payload: DeployPayload; signature: string }
+  // `superseded: true` means a newer release invalidated the job; abort its run.
+  | { type: 'cancel'; jobId: string; reason: string | null; superseded: boolean; actor?: string }
   | { type: 'revoke' }
   | { type: 'sync_workflows' }
   | { type: 'ping' }
@@ -130,6 +132,56 @@ export interface WorkflowReport {
   steps?: WorkflowStepReport[];
 }
 
+/** Permission carried by a `storage` grant. */
+export type StoragePermission = 'read' | 'write' | 'delete';
+
+/** A single grant on an API token. */
+export type TokenScope =
+  | { type: 'agent'; agentIds: string[] }
+  | { type: 'trigger'; triggerIds: string[] }
+  | { type: 'storage'; bindingIds: string[] | null; permissions: StoragePermission[] };
+
+/** Per-token rate limit. `null` means no limit for that window. */
+export interface TokenRateLimit {
+  perMinute: number | null;
+  perHour: number | null;
+  perDay: number | null;
+}
+
+/** Self-description of the API token in use. */
+export interface TokenInfo {
+  organizationId: string;
+  name: string;
+  scopes: TokenScope[];
+  rateLimit: TokenRateLimit;
+  expiresAt: string | null;
+}
+
+/** Lifecycle state of an agent. */
+export type AgentStatus = 'pending' | 'connected' | 'disconnected' | 'revoked';
+
+/** An agent (device) the current API token can reach. */
+export interface AgentSummary {
+  id: string;
+  name: string;
+  hostname: string | null;
+  os: string | null;
+  agentVersion: string | null;
+  status: AgentStatus;
+  lastSeenAt: string | null;
+  registeredAt: string;
+}
+
+/** A workflow the current API token can run. */
+export interface WorkflowSummary {
+  id: string;
+  agentId: string;
+  name: string;
+  description: string | null;
+  version: string | null;
+  paramsSchema: WorkflowParam[] | null;
+}
+
 /** Cleanup policy applied to a file after upload. */
 export type CleanupRule =
   | { kind: 'ttl'; ttlSeconds: number }
@@ -199,3 +251,52 @@ export type UploadInput =
   | { path: string }
   | { stream: ReadableStream<Uint8Array>; size?: number }
   | { buffer: Uint8Array };
+
+/** Reported lifecycle state of an app on this device. */
+export type AppDeviceState = 'idle' | 'pending' | 'updating' | 'failed';
+
+/** The release currently installed on this device for an app. */
+export interface DesiredCurrent {
+  releaseId: string;
+  version: string;
+  sequence: number;
+}
+
+/** The release this device should converge to. */
+export interface DesiredRelease {
+  releaseId: string;
+  version: string;
+  sequence: number;
+  channel: string;
+  workflowName: string;
+  checksumSha256: string;
+  size: number;
+  downloadUrl: string;
+  downloadExpiresIn: number;
+}
+
+/** One app's signed desired-state manifest. Order releases by `sequence`
+ *  (integer); `version` is display-only. */
+export interface DesiredApp {
+  applicationId: string;
+  slug: string;
+  channel: string;
+  updateWorkflow: string;
+  current: DesiredCurrent | null;
+  desired: DesiredRelease | null;
+  minVersion: string | null;
+  minSequence: number;
+  forced: boolean;
+  issuedAt: number;
+  nonce: string;
+}
+
+/** Device-state report sent by `DepliteAgent.deploy.report`. */
+export interface DeviceReportInput {
+  applicationId: string;
+  currentVersion?: string;
+  currentReleaseId?: string;
+  currentSequence?: number;
+  state?: AppDeviceState;
+  error?: string;
+}

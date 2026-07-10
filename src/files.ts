@@ -126,6 +126,7 @@ export class Files {
   }
 }
 
+/** Best-effort filename derived from an upload source (path inputs only). */
 export function inferFilename(input: UploadInput): string | undefined {
   if ('path' in input) {
     const sep = Math.max(input.path.lastIndexOf('/'), input.path.lastIndexOf('\\'));
@@ -134,6 +135,7 @@ export function inferFilename(input: UploadInput): string | undefined {
   return undefined;
 }
 
+/** PUT the upload body to a presigned URL. */
 export async function putUpload(
   fetchFn: typeof fetch,
   presign: PresignedUpload,
