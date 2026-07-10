@@ -77,6 +77,22 @@ function quote(s: string): string {
       case 0x09:
         r += '\\t';
         break;
+      // matches Go encoding/json default escaping used by the backend signer
+      case 0x26: // &
+        r += '\\u0026';
+        break;
+      case 0x3c: // <
+        r += '\\u003c';
+        break;
+      case 0x3e: // >
+        r += '\\u003e';
+        break;
+      case 0x2028:
+        r += '\\u2028';
+        break;
+      case 0x2029:
+        r += '\\u2029';
+        break;
       default:
         if (c < 0x20) {
           r += '\\u' + c.toString(16).padStart(4, '0');

@@ -1,3 +1,4 @@
+import { AgentDeploy } from './agent-deploy.js';
 import { AgentFiles } from './agent-files.js';
 import { AgentJobs } from './agent-jobs.js';
 import { AgentWorkflows } from './agent-workflows.js';
@@ -21,6 +22,7 @@ export class DepliteAgent {
   readonly workflows: AgentWorkflows;
   readonly jobs: AgentJobs;
   readonly files: AgentFiles;
+  readonly deploy: AgentDeploy;
   private readonly http: HttpClient;
   private readonly keyPromise: Promise<Ed25519Key>;
   private readonly fetchFn: typeof fetch;
@@ -45,6 +47,12 @@ export class DepliteAgent {
       options.identity.agentId,
       this.lazyKey(),
       this.fetchFn,
+    );
+    this.deploy = new AgentDeploy(
+      this.http,
+      options.identity.agentId,
+      this.lazyKey(),
+      options.identity.serverPublicKeyPem,
     );
   }
 
@@ -132,6 +140,8 @@ export async function parseEvent(
   switch (name) {
     case 'deploy':
       return await parseDeploy(data, serverPublicKeyPem);
+    case 'cancel':
+      return parseCancel(data);
     case 'revoke':
       return { type: 'revoke' };
     case 'sync_workflows':
@@ -172,6 +182,26 @@ async function parseDeploy(data: string, serverPublicKeyPem: string): Promise<Ag
   const payload = mapDeployPayload(envelope.payload);
   if (!payload) return { type: 'unknown', name: 'deploy', data };
   return { type: 'deploy', payload, signature: envelope.signature };
+}
+
+// `cancel` is unsigned; the backend gates it on the authenticated stream.
+function parseCancel(data: string): AgentEvent {
+  let obj: Record<string, unknown>;
+  try {
+    obj = JSON.parse(data);
+  } catch {
+    return { type: 'unknown', name: 'cancel', data };
+  }
+  if (!obj || typeof obj !== 'object') return { type: 'unknown', name: 'cancel', data };
+  const jobId = obj.job_id ?? obj.jobId;
+  if (typeof jobId !== 'string') return { type: 'unknown', name: 'cancel', data };
+  return {
+    type: 'cancel',
+    jobId,
+    reason: typeof obj.reason === 'string' ? obj.reason : null,
+    superseded: obj.superseded === true,
+    ...(typeof obj.actor === 'string' ? { actor: obj.actor } : {}),
+  };
 }
 
 function mapDeployPayload(raw: unknown): DeployPayload | null {

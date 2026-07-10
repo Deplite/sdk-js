@@ -36,10 +36,22 @@ const uploaded = await deplite.files.upload({ file: { path: '/tmp/build.apk' } }
 
 ESM과 CommonJS 모두 지원합니다.
 
+## 무엇에 접근할 수 있는지 확인하기
+
+기기 ID나 워크플로우 이름을 미리 알지 못해도, 토큰이 닿을 수 있는 범위를 SDK로 바로 조회할 수 있습니다.
+
+```ts
+const info = await deplite.token.info();
+const agents = await deplite.agents.list();
+const workflows = await deplite.workflows.list();
+```
+
+조회 결과는 언제나 토큰에 부여된 권한 범위로만 한정됩니다.
+
 ---
 
 더 자세한 내용은 [Deplite 가이드](https://docs.deplite.io/guide)를 참고해주세요.
 
 ## 라이선스
 
-[Apache-2.0. LICENSE](LICENSE)
+[Apache-2.0](LICENSE) 라이선스로 제공됩니다.

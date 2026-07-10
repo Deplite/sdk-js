@@ -1,8 +1,11 @@
 import { ed25519FromRawPrivate, generateEd25519 } from './internal/ed25519.js';
 import { HttpClient } from './internal/http-client.js';
-import type { Enrollment } from './models.js';
+import type { Registration } from './models.js';
+import { Agents } from './agents.js';
 import { Files } from './files.js';
+import { Token } from './token.js';
 import { Triggers } from './triggers.js';
+import { Workflows } from './workflows.js';
 
 /** Options accepted by the {@link Deplite} constructor. */
 export interface DepliteOptions {
@@ -20,6 +23,9 @@ export class Deplite {
   readonly baseUrl: string;
   readonly triggers: Triggers;
   readonly files: Files;
+  readonly token: Token;
+  readonly agents: Agents;
+  readonly workflows: Workflows;
 
   constructor(options: DepliteOptions) {
     this.apiToken = options.apiToken;
@@ -28,10 +34,13 @@ export class Deplite {
     const http = new HttpClient({ baseUrl: this.baseUrl, fetch: fetchFn });
     this.triggers = new Triggers(http, this.apiToken);
     this.files = new Files(http, this.apiToken, fetchFn);
+    this.token = new Token(http, this.apiToken);
+    this.agents = new Agents(http, this.apiToken);
+    this.workflows = new Workflows(http, this.apiToken);
   }
 
   /** Register a new agent and return its identity + private key. */
-  static async enroll(options: {
+  static async register(options: {
     installCode: string;
     name: string;
     hostname?: string;
@@ -39,7 +48,7 @@ export class Deplite {
     agentVersion?: string;
     baseUrl?: string;
     fetch?: typeof fetch;
-  }): Promise<Enrollment> {
+  }): Promise<Registration> {
     const baseUrl = (options.baseUrl ?? Deplite.DEFAULT_BASE_URL).replace(/\/+$/, '');
     const fetchFn = options.fetch ?? globalThis.fetch;
     const http = new HttpClient({ baseUrl, fetch: fetchFn });
