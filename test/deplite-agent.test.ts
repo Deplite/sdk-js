@@ -139,6 +139,108 @@ describe('DepliteAgent (Embedded)', () => {
     expect(collected).toEqual(['ping', 'deploy']);
   });
 
+  it('deploy.desired verifies and maps signed manifests', async () => {
+    const { agent, serverKey } = await newAgent(server);
+    const payload = {
+      application_id: 'app-1',
+      slug: 'my-app',
+      channel: 'stable',
+      update_workflow: 'ota.yml',
+      current: { release_id: 'r-1', version: '1.0.0', sequence: 10 },
+      desired: {
+        release_id: 'r-2',
+        version: '1.1.0',
+        sequence: 11,
+        channel: 'stable',
+        workflow_name: 'ota.yml',
+        checksum_sha256: 'deadbeef',
+        size: 1234,
+        // `&` in the presigned URL exercises the Go-compatible canonical escaping.
+        download_url: 'https://s3.example.com/o?a=1&b=2',
+        download_expires_in: 3600,
+      },
+      min_version: '1.0.0',
+      min_sequence: 5,
+      forced: false,
+      issued_at: 1700000000,
+      nonce: 'n-1',
+    };
+    const sig = await serverKey.sign(new TextEncoder().encode(canonicalJson(payload)));
+    const signature = Buffer.from(sig).toString('base64');
+    server.setHandler((req, res) => {
+      expect(req.method).toBe('GET');
+      expect(req.url).toBe('/agent/deploy/desired');
+      expect(typeof req.headers['x-signature']).toBe('string');
+      res.statusCode = 200;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ apps: [{ payload, signature }] }));
+    });
+    const apps = await agent.deploy.desired();
+    expect(apps.length).toBe(1);
+    expect(apps[0]!.applicationId).toBe('app-1');
+    expect(apps[0]!.current?.sequence).toBe(10);
+    expect(apps[0]!.desired?.workflowName).toBe('ota.yml');
+    expect(apps[0]!.desired?.downloadUrl).toBe('https://s3.example.com/o?a=1&b=2');
+    expect(apps[0]!.minSequence).toBe(5);
+  });
+
+  it('deploy.desired rejects a tampered manifest', async () => {
+    const { agent, serverKey } = await newAgent(server);
+    const payload = {
+      application_id: 'app-1',
+      slug: 'my-app',
+      current: null,
+      desired: null,
+      min_version: null,
+      min_sequence: 0,
+      forced: false,
+      issued_at: 1,
+      nonce: 'n',
+    };
+    const sig = await serverKey.sign(new TextEncoder().encode(canonicalJson(payload)));
+    const signature = Buffer.from(sig).toString('base64');
+    server.setHandler((_req, res) => {
+      res.statusCode = 200;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ apps: [{ payload: { ...payload, slug: 'evil' }, signature }] }));
+    });
+    await expect(agent.deploy.desired()).rejects.toThrow(/verification failed for evil/);
+  });
+
+  it('deploy.desired rejects an empty signature', async () => {
+    const { agent } = await newAgent(server);
+    const payload = { application_id: 'app-1', slug: 'my-app' };
+    server.setHandler((_req, res) => {
+      res.statusCode = 200;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ apps: [{ payload, signature: '' }] }));
+    });
+    await expect(agent.deploy.desired()).rejects.toThrow(/verification failed/);
+  });
+
+  it('deploy.report sends a camelCase body and omits undefined fields', async () => {
+    const { agent } = await newAgent(server);
+    server.setHandler((req, res) => {
+      expect(req.method).toBe('POST');
+      expect(req.url).toBe('/agent/deploy/report');
+      expect(typeof req.headers['x-signature']).toBe('string');
+      const body = JSON.parse(req.body.toString());
+      expect(body).toEqual({
+        applicationId: 'app-1',
+        currentVersion: '1.0.0',
+        state: 'idle',
+      });
+      res.statusCode = 200;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ ok: true }));
+    });
+    await agent.deploy.report({
+      applicationId: 'app-1',
+      currentVersion: '1.0.0',
+      state: 'idle',
+    });
+  });
+
   it('events({signal}) terminates when aborted', async () => {
     const { agent } = await newAgent(server);
     server.setHandler((_req, res) => {

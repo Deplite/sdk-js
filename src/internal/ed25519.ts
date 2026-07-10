@@ -206,4 +206,5 @@ export async function sha256Hex(bytes: Uint8Array): Promise<string> {
   return s;
 }
 
+/** Low-level helpers shared with sibling internal modules and tests. */
 export const _internal = { isNode, toBase64, fromBase64, spkiDerFromPem, rawToSpkiDer };
